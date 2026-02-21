@@ -13,32 +13,34 @@ export default {
       const messageId = msg.message_id;
 
       if (msg.new_chat_members) {
+        // Delete the join message
         await deleteMessage(API_URL, chatId, messageId);
 
-        const inviterId = msg.from.id;
-        const isAdmin = await checkIsAdmin(API_URL, chatId, inviterId);
-
-        if (!isAdmin) {
-          for (const member of msg.new_chat_members) {
-            await kickUser(API_URL, chatId, member.id);
-            
-            // Construct notification with Username
-            const name = member.first_name + (member.last_name ? ` ${member.last_name}` : "");
-            const username = member.username ? ` (@${member.username})` : "";
-            
-            const logMsg = `🚫 **User has been kicked**\n` +
-                           `**Name:** ${name}${username}\n` +
-                           `**ID:** \`${member.id}\`\n` +
-                           `**Group:** ${msg.chat.title || "Unknown"}`;
-            
-            await notifyAdmin(API_URL, env.ADMIN_ID, logMsg);
+        for (const member of msg.new_chat_members) {
+          // SAFETY: Never kick the main admin/owner
+          if (member.id.toString() === env.ADMIN_ID?.toString()) {
+            continue;
           }
+
+          // Kick others
+          await kickUser(API_URL, chatId, member.id);
+          
+          const name = member.first_name + (member.last_name ? ` ${member.last_name}` : "");
+          const username = member.username ? ` (@${member.username})` : "";
+          
+          const logMsg = `🚫 **User has been kicked**\n` +
+                         `**Name:** ${name}${username}\n` +
+                         `**ID:** \`${member.id}\`\n` +
+                         `**Group:** ${msg.chat.title || "Unknown"}`;
+          
+          await notifyAdmin(API_URL, env.ADMIN_ID, logMsg);
         }
       }
 
       if (msg.left_chat_member) {
         await deleteMessage(API_URL, chatId, messageId);
-      } 
+      }
+
     } catch (e) {
       console.error("Worker Error:", e);
     }
@@ -67,17 +69,6 @@ async function deleteMessage(apiUrl, chatId, messageId) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: chatId, message_id: messageId })
   });
-}
-
-async function checkIsAdmin(apiUrl, chatId, userId) {
-  try {
-    const resp = await fetch(`${apiUrl}/getChatMember?chat_id=${chatId}&user_id=${userId}`);
-    const data = await resp.json();
-    const status = data.result?.status;
-    return (status === "administrator" || status === "creator");
-  } catch (e) {
-    return false;
-  }
 }
 
 async function kickUser(apiUrl, chatId, userId) {
